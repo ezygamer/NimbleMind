@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Match Game</title>
+    <!-- Chosen Palette: Minimalist Blue and Gray -->
+    <!-- Application Structure Plan: The application uses a multi-screen structure managed within a single page: Home Screen, Tutorial, and Game Screen. This provides a clear user flow, starting from a central menu, onboarding with a tutorial, and then entering the main game loop. Modals are used for contextual actions like pausing and settings to avoid disrupting the game state. -->
+    <!-- Visualization & Content Choices: The source report describes a game. Goal: Teach and then allow play. Presentation: An interactive HTML/CSS grid for both stages. Interaction: User clicks on cells to match pairs. Justification: This directly simulates the game, providing a hands-on learning experience followed by the actual gameplay. Library/Method: Vanilla JS for logic, Tailwind CSS for styling. No charts are needed. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+            background-color: #f0f4f8;
+        }
+        .grid-cell {
+            transition: all 0.2s ease-in-out;
+            aspect-ratio: 1 / 1;
+            border-right: 1px solid #d1d5db;
+            border-bottom: 1px solid #d1d5db;
+            cursor: pointer;
+            position: relative;
+        }
+        .game-grid-container {
+             border-left: 1px solid #d1d5db;
+             border-top: 1px solid #d1d5db;
+        }
+        .highlight {
+            background-color: #60a5fa !important;
+            color: white !important;
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 10;
+        }
+        .blurred {
+            color: #d1d5db !important;
+            background-color: #f9fafb !important;
+            cursor: default;
+        }
+        .cleared {
+             background-color: transparent !important;
+             color: transparent !important;
+             cursor: default;
+             border-color: #e5e7eb !important;
+        }
+        .selected {
+            background-color: #3b82f6 !important;
+            color: white !important;
+        }
+        .hint-highlight {
+            background-color: #fde047 !important; /* yellow-300 */
+            color: #1f2937 !important; /* gray-800 */
+        }
+        .control-button {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+        }
+        .control-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+        .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            min-width: 24px;
+            height: 24px;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        #main-game-grid-wrapper {
+            height: 40vh;
+            max-height: 400px;
+            overflow-y: auto;
+            scrollbar-width: none; /* Firefox */
+        }
+        #main-game-grid-wrapper::-webkit-scrollbar {
+            display: none; /* Safari and Chrome */
+        }
+        #effect-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 40;
+        }
+        .sparkle-effect {
+            position: absolute;
+            font-size: 2rem;
+            animation: sparkle-pop 0.4s forwards;
+            pointer-events: none;
+            z-index: 45;
+        }
+        @keyframes sparkle-pop {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.5); opacity: 1; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+        .cross-symbol {
+            display: none;
+            position: absolute;
+            font-size: 2.5rem;
+            line-height: 1;
+            color: #ef4444; /* red-500 */
+        }
+        .grid-cell.error {
+            background-color: #fecaca !important; /* red-200 */
+            border-color: #ef4444 !important; /* red-500 */
+        }
+        .grid-cell.error .number-text {
+            visibility: hidden;
+        }
+        .grid-cell.error .cross-symbol {
+            display: block;
+        }
+        .lang-btn.selected-lang {
+            background-color: #e0e7ff; /* indigo-100 */
+            border: 2px solid #818cf8; /* indigo-400 */
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div id="app-wrapper" class="relative w-full h-full">
+        <!-- Canvas for line effect -->
+        <canvas id="effect-canvas"></canvas>
+        
+        <!-- Home Screen -->
+        <div id="home-screen" class="w-full max-w-md mx-auto bg-blue-50 p-8 rounded-3xl shadow-2xl text-center flex flex-col justify-center hidden" style="min-height: 600px;">
+            <h1 class="text-4xl font-bold text-blue-800 mb-8">NimbleMind</h1>
+            <button id="continue-game-btn" class="w-full bg-blue-500 text-white font-bold py-3 rounded-xl mb-4 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed" data-lang="continue">Continue</button>
+            <button id="new-game-btn" class="w-full bg-gray-200 text-gray-800 font-bold py-3 rounded-xl hover:bg-gray-300" data-lang="new_game">New Game</button>
+        </div>
+
+        <!-- Part A: Tutorial Container -->
+        <div id="tutorial-container" class="w-full max-w-sm mx-auto bg-white p-4 sm:p-6 rounded-2xl shadow-lg hidden">
+            <div class="flex justify-between items-center mb-4">
+                 <h1 class="text-2xl sm:text-3xl font-bold text-center text-gray-800 flex-1" data-lang="title">Number Match</h1>
+                 <button id="skip-tutorial-btn" class="hidden text-sm text-blue-600 hover:underline" data-lang="skip">Skip</button>
+            </div>
+            <div class="game-grid-container grid grid-cols-5 mb-4"></div>
+            <div id="add-numbers-section-tutorial" class="hidden text-center">
+                 <button id="add-btn-tutorial" class="bg-blue-500 hover:bg-blue-600 text-white font-bold transition-transform transform hover:scale-105 text-3xl w-16 h-16 rounded-full shadow-lg">+</button>
+            </div>
+            <div id="tutorial-info-box" class="text-center p-4 bg-blue-50 rounded-lg mt-4">
+                <h3 id="tutorial-title" class="font-bold text-blue-800 mb-1"></h3>
+                <p id="tutorial-text" class="text-sm text-blue-700"></p>
+                <div class="flex justify-center items-center mt-3">
+                    <span id="tutorial-progress" class="text-xs font-medium text-blue-600"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Part B: Main Game Container -->
+        <div id="game-container" class="w-full max-w-md mx-auto bg-blue-50 p-4 rounded-3xl shadow-2xl hidden">
+            <header class="flex items-center justify-between mb-4 px-2">
+                <button id="back-btn" class="text-blue-600 text-2xl p-2 rounded-lg hover:bg-blue-100">&lt;</button>
+                <h2 id="stage-title" class="text-xl font-bold text-blue-800" data-lang-prefix="stage">Stage 1</h2>
+                <button id="pause-btn" class="text-blue-600 text-2xl p-2 rounded-lg hover:bg-blue-100">⏸️</button>
+            </header>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="bg-white p-3 rounded-xl text-center shadow">
+                    <p class="text-sm text-gray-500" data-lang="score">Score</p>
+                    <p id="current-score" class="text-2xl font-bold text-gray-800">0</p>
+                </div>
+                <div class="bg-white p-3 rounded-xl text-center shadow">
+                    <p class="text-sm text-gray-500" data-lang="best">Best</p>
+                    <p id="best-score" class="text-2xl font-bold text-gray-800">0</p>
+                </div>
+            </div>
+            <div id="main-game-grid-wrapper" class="bg-white rounded-lg">
+                <div id="main-game-grid" class="game-grid-container grid grid-cols-9"></div>
+            </div>
+            <footer class="flex items-center justify-center gap-8 mt-6">
+                <div class="relative">
+                    <button id="add-row-btn" class="control-button bg-blue-500 text-white flex items-center justify-center text-4xl">+</button>
+                    <span id="add-row-badge" class="badge bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">5</span>
+                </div>
+                <div class="relative">
+                    <button id="hint-btn" class="control-button bg-yellow-400 text-white flex items-center justify-center text-4xl">💡</button>
+                    <span id="hint-badge" class="badge bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">3</span>
+                </div>
+                <div class="relative">
+                    <button id="auto-solve-btn" class="control-button bg-purple-500 text-white flex items-center justify-center text-4xl">🤖</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Pause Modal -->
+    <div id="pause-modal" class="modal-overlay hidden">
+        <div class="bg-white w-full max-w-xs p-6 rounded-2xl shadow-xl text-center relative">
+            <button id="close-pause-modal" class="absolute top-2 right-2 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+            <h3 class="text-2xl font-bold mb-4" data-lang="paused">Paused</h3>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <button id="sound-toggle-btn" class="bg-blue-100 text-blue-600 text-4xl p-4 rounded-xl hover:bg-blue-200">🔊</button>
+                <button id="settings-btn" class="bg-blue-100 text-blue-600 text-4xl p-4 rounded-xl hover:bg-blue-200">⚙️</button>
+            </div>
+            <button id="how-to-play-btn" class="w-full bg-blue-500 text-white font-bold py-3 rounded-xl mb-3 hover:bg-blue-600" data-lang="how_to_play">💡 How to play</button>
+            <button id="feedback-btn" class="w-full bg-gray-500 text-white font-bold py-3 rounded-xl mb-3 hover:bg-gray-600" data-lang="feedback">Feedback</button>
+            <div class="grid grid-cols-2 gap-3">
+                <button id="retry-btn" class="w-full bg-gray-300 text-gray-800 font-bold py-3 rounded-xl hover:bg-gray-400" data-lang="retry">Retry</button>
+                <button id="continue-btn" class="w-full bg-gray-300 text-gray-800 font-bold py-3 rounded-xl hover:bg-gray-400" data-lang="continue">Continue</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="bg-white w-full max-w-xs p-6 rounded-2xl shadow-xl text-center relative">
+            <button id="close-settings-modal" class="absolute top-2 right-2 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+            <h3 class="text-2xl font-bold mb-4" data-lang="language">Language</h3>
+            <div class="flex justify-center gap-4">
+                <button class="lang-btn text-lg p-2 rounded-md hover:bg-gray-200" data-lang-code="en">English</button>
+                <button class="lang-btn text-lg p-2 rounded-md hover:bg-gray-200" data-lang-code="kn">ಕನ್ನಡ</button>
+                <button class="lang-btn text-lg p-2 rounded-md hover:bg-gray-200" data-lang-code="hi">हिन्दी</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback Modal -->
+    <div id="feedback-modal" class="modal-overlay hidden">
+        <div class="bg-white w-full max-w-xs p-6 rounded-2xl shadow-xl text-center relative">
+            <button id="close-feedback-modal" class="absolute top-2 right-2 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+            <h3 class="text-2xl font-bold mb-4" data-lang="feedback">Feedback</h3>
+            <textarea id="feedback-textarea" class="w-full h-24 p-2 border rounded-md mb-4" placeholder="Your feedback..."></textarea>
+            <button id="submit-feedback-btn" class="w-full bg-green-500 text-white font-bold py-3 rounded-xl hover:bg-green-600" data-lang="submit">Submit</button>
+        </div>
+    </div>
+
+    <!-- Win Animation -->
+    <div id="win-animation" class="modal-overlay hidden">
+        <div class="text-center text-white">
+            <h2 id="win-message" class="text-4xl font-bold animate-bounce"></h2>
+            <p class="text-xl mt-2" data-lang="stage_complete">Stage Complete</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let audioCtx;
+            let soundEnabled = true;
+
+            const translations = {
+                en: {
+                    title: "Number Match",
+                    stage: "Stage",
+                    score: "Score",
+                    best: "Best",
+                    paused: "Paused",
+                    how_to_play: "💡 How to play",
+                    feedback: "Feedback",
+                    retry: "Retry",
+                    continue: "Continue",
+                    language: "Language",
+                    submit: "Submit",
+                    new_game: "New Game",
+                    skip: "Skip",
+                    stage_complete: "Stage Complete"
+                },
+                kn: {
+                    title: "ಸಂಖ್ಯೆ ಹೊಂದಾಣಿಕೆ",
+                    stage: "ಹಂತ",
+                    score: "ಅಂಕ",
+                    best: "ಅತ್ಯುತ್ತಮ",
+                    paused: "ವಿರಾಮ",
+                    how_to_play: "💡 ಆಡುವುದು ಹೇಗೆ",
+                    feedback: "ಪ್ರತಿಕ್ರಿಯೆ",
+                    retry: "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
+                    continue: "ಮುಂದುವರಿಸಿ",
+                    language: "ಭಾಷೆ",
+                    submit: "ಸಲ್ಲಿಸಿ",
+                    new_game: "ಹೊಸ ಆಟ",
+                    skip: "ಸ್ಕಿಪ್",
+                    stage_complete: "ಹಂತ ಪೂರ್ಣಗೊಂಡಿದೆ"
+                },
+                hi: {
+                    title: "नंबर मैच",
+                    stage: "स्तर",
+                    score: "स्कोर",
+                    best: "सर्वश्रेष्ठ",
+                    paused: "विराम",
+                    how_to_play: "💡 कैसे खेलें",
+                    feedback: "प्रतिक्रिया",
+                    retry: "पुनः प्रयास करें",
+                    continue: "जारी रखें",
+                    language: "भाषा",
+                    submit: "प्रस्तुत करें",
+                    new_game: "नया खेल",
+                    skip: "स्किप",
+                    stage_complete: "स्तर पूरा हुआ"
+                }
+            };
+
+            let currentLang = 'en';
+
+            function setLanguage(lang) {
+                currentLang = lang;
+                document.querySelectorAll('[data-lang]').forEach(el => {
+                    const key = el.getAttribute('data-lang');
+                    if (translations[lang][key]) {
+                        el.textContent = translations[lang][key];
+                    }
+                });
+                document.querySelectorAll('[data-lang-prefix]').forEach(el => {
+                    const key = el.getAttribute('data-lang-prefix');
+                    const stageNumber = el.textContent.match(/\d+/)[0];
+                    if (translations[lang][key]) {
+                        el.textContent = `${translations[lang][key]} ${stageNumber}`;
+                    }
+                });
+                 document.getElementById('feedback-textarea').placeholder = lang === 'en' ? 'Your feedback...' : (lang === 'kn' ? 'ನಿಮ್ಮ ಪ್ರತಿಕ್ರಿಯೆ...' : 'आपकी प्रतिक्रिया...');
+                 
+                 document.querySelectorAll('.lang-btn').forEach(btn => {
+                    btn.classList.remove('selected-lang');
+                    if (btn.dataset.langCode === lang) {
+                        btn.classList.add('selected-lang');
+                    }
+                 });
+            }
+
+            function playSound(type = 'normal') {
+                if (!soundEnabled) return;
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                if (type === 'win') {
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(1046.50, audioCtx.currentTime + 0.5);
+                    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+                } else {
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+                }
+                
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.5);
+            }
+
+            const homeScreen = document.getElementById('home-screen');
+            const newGameBtn = document.getElementById('new-game-btn');
+            const continueGameBtn = document.getElementById('continue-game-btn');
+
+            const tutorialContainer = document.getElementById('tutorial-container');
+            const tutorialGrid = tutorialContainer.querySelector('.game-grid-container');
+            const tutorialTitle = document.getElementById('tutorial-title');
+            const tutorialText = document.getElementById('tutorial-text');
+            const tutorialProgress = document.getElementById('tutorial-progress');
+            const addNumbersSectionTutorial = document.getElementById('add-numbers-section-tutorial');
+            const addBtnTutorial = document.getElementById('add-btn-tutorial');
+            const skipTutorialBtn = document.getElementById('skip-tutorial-btn');
+            
+            let tutorialBoard = [];
+            let tutorialStep = 0;
+
+            const tutorialSequence = [
+                { highlight: [2, 3], tutorial: { title: "Match Pairs of Numbers", text: "Find pairs of numbers that are the same, or whose sum is 10, and tap them.", progress: "1/6" } },
+                { highlight: [0, 5], tutorial: { title: "Match Pairs of Numbers", text: "Find pairs of numbers that are the same, or whose sum is 10, and tap them.", progress: "1/6" } },
+                { highlight: [6, 7], tutorial: { title: "Match Pairs of Numbers", text: "Find pairs of numbers that are the same, or whose sum is 10, and tap them.", progress: "1/6" } },
+                { highlight: [8, 14], tutorial: { title: "Check Different Directions", text: "Pairs can be matched horizontally, vertically, or even diagonally.", progress: "2/6" } },
+                { highlight: [1, 13], tutorial: { title: "Check for Diagonal Pairs", text: "Find numbers that are separated by empty cells. Diagonally opposite numbers can form pairs.", progress: "3/6" } },
+                { highlight: [9, 10], tutorial: { title: "Check Line by Line", text: "Remember to check the end of one line and the start of the next, as they might form pairs.", progress: "4/6" } },
+                { action: 'compactAndShowAdd', tutorial: { title: "Add More Numbers", text: "If there are no more pairs to match, you can add more numbers.", progress: "5/6" } },
+                { action: 'addNumbersAndUnlock', tutorial: { title: "Clear the Board!", text: "Every time you clear all numbers on the board, you will get more points and achieve higher scores.", progress: "6/6" } },
+            ];
+
+            function initTutorial(isFromPauseMenu = false) {
+                const initialValues = [4, 7, 1, 1, 5, 6, 2, 8, 4, 9, 1, 9, 6, 3, 4];
+                tutorialBoard = initialValues.map(val => ({ value: val, state: 'active' }));
+                tutorialStep = 0;
+                renderTutorialBoard();
+                if (isFromPauseMenu) {
+                    skipTutorialBtn.classList.remove('hidden');
+                    gameContainer.classList.add('hidden');
+                    tutorialContainer.classList.remove('hidden');
+                }
+                setTimeout(runTutorialStep, 500);
+            }
+
+            function renderTutorialBoard() {
+                tutorialGrid.innerHTML = '';
+                tutorialBoard.forEach((cellData) => {
+                    const cell = document.createElement('div');
+                    cell.classList.add('grid-cell', 'font-bold', 'flex', 'items-center', 'justify-center');
+                    const numberText = document.createElement('span');
+                    numberText.classList.add('number-text');
+                    numberText.textContent = cellData.value;
+                    const crossSymbol = document.createElement('span');
+                    crossSymbol.classList.add('cross-symbol');
+                    crossSymbol.innerHTML = '&times;';
+                    cell.appendChild(numberText);
+                    cell.appendChild(crossSymbol);
+                    if (cellData.state === 'blurred') cell.classList.add('blurred');
+                    else if (cellData.state === 'cleared') cell.classList.add('cleared');
+                    tutorialGrid.appendChild(cell);
+                });
+            }
+
+            function runTutorialStep() {
+                if (tutorialStep >= tutorialSequence.length) return;
+                const step = tutorialSequence[tutorialStep];
+                updateTutorialInfo(step.tutorial);
+                if (step.highlight) {
+                    const [idx1, idx2] = step.highlight;
+                    const cell1 = tutorialGrid.children[idx1];
+                    const cell2 = tutorialGrid.children[idx2];
+                    cell1.classList.add('highlight');
+                    cell2.classList.add('highlight');
+                    const proceed = () => handleTutorialClick(idx1, idx2);
+                    cell1.onclick = proceed;
+                    cell2.onclick = proceed;
+                } else if (step.action) {
+                    handleTutorialAction(step.action);
+                }
+            }
+
+            function handleTutorialClick(idx1, idx2) {
+                playSound();
+                tutorialGrid.children[idx1].onclick = null;
+                tutorialGrid.children[idx2].onclick = null;
+                tutorialBoard[idx1].state = 'blurred';
+                tutorialBoard[idx2].state = 'blurred';
+                renderTutorialBoard();
+                tutorialStep++;
+                setTimeout(runTutorialStep, 500);
+            }
+
+            function handleTutorialAction(action) {
+                 if (action === 'compactAndShowAdd') {
+                    tutorialBoard = [
+                        {value: 4, state: 'blurred'}, {value: 7, state: 'blurred'}, {value: 1, state: 'blurred'}, {value: 1, state: 'blurred'}, {value: 5, state: 'active'},
+                        {value: 1, state: 'blurred'}, {value: 9, state: 'active'},  {value: 6, state: 'active'},  {value: 3, state: 'blurred'}, {value: 4, state: 'blurred'},
+                        {value: ' ', state: 'cleared'}, {value: ' ', state: 'cleared'}, {value: ' ', state: 'cleared'}, {value: ' ', state: 'cleared'}, {value: ' ', state: 'cleared'}
+                    ];
+                    renderTutorialBoard();
+                    addNumbersSectionTutorial.classList.remove('hidden');
+                    tutorialStep++;
+                    addBtnTutorial.onclick = () => { playSound(); runTutorialStep(); };
+                } else if (action === 'addNumbersAndUnlock') {
+                    addNumbersSectionTutorial.classList.add('hidden');
+                    tutorialBoard = [
+                        {value: 4, state: 'blurred'}, {value: 7, state: 'blurred'}, {value: 1, state: 'blurred'}, {value: 1, state: 'blurred'}, {value: 5, state: 'active'},
+                        {value: 1, state: 'blurred'}, {value: 9, state: 'active'}, {value: 6, state: 'active'}, {value: 3, state: 'blurred'}, {value: 4, state: 'blurred'},
+                        {value: 5, state: 'active'}, {value: 9, state: 'active'}, {value: 6, state: 'active'}, {value: ' ', state: 'cleared'}, {value: ' ', state: 'cleared'},
+                    ];
+                    renderTutorialBoard();
+                    let playableValue = 6;
+                    let selectedCellIndex = null;
+                    const setupPlayable = () => {
+                        tutorialBoard.forEach((cellData, index) => {
+                            if (cellData.state === 'active' && cellData.value === playableValue) {
+                                tutorialGrid.children[index].onclick = () => handleTutorialPlayableClick(index);
+                            } else {
+                                tutorialGrid.children[index].onclick = null;
+                            }
+                        });
+                    };
+                    const handleTutorialPlayableClick = (index) => {
+                        const cell = tutorialGrid.children[index];
+                        if (selectedCellIndex === null) {
+                            selectedCellIndex = index;
+                            cell.classList.add('selected');
+                        } else {
+                            if (tutorialBoard[selectedCellIndex].value === tutorialBoard[index].value) {
+                                playSound();
+                                tutorialBoard[selectedCellIndex].state = 'blurred';
+                                tutorialBoard[index].state = 'blurred';
+                                renderTutorialBoard();
+                                selectedCellIndex = null;
+                                if (playableValue === 6) playableValue = 9;
+                                else if (playableValue === 9) playableValue = 5;
+                                
+                                if (tutorialBoard.every(c => c.state !== 'active')) {
+                                    updateTutorialInfo({ title: "Congratulations!", text: "You have cleared the board!", progress: "Complete!" });
+                                    localStorage.setItem('nimbleMindTutorialCompleted', 'true');
+                                    setTimeout(() => {
+                                        tutorialBoard.forEach(c => c.state = 'cleared');
+                                        renderTutorialBoard();
+                                        setTimeout(transitionToGame, 1000);
+                                    }, 1000);
+                                } else {
+                                    setupPlayable();
+                                }
+                            } else {
+                                tutorialGrid.children[selectedCellIndex].classList.remove('selected');
+                                selectedCellIndex = null;
+                            }
+                        }
+                    };
+                    setupPlayable();
+                }
+            }
+            
+            function updateTutorialInfo({ title, text, progress }) {
+                tutorialTitle.textContent = title;
+                tutorialText.textContent = text;
+                tutorialProgress.textContent = progress;
+            }
+
+            function transitionToGame() {
+                tutorialContainer.classList.add('hidden');
+                gameContainer.classList.remove('hidden');
+                initGame();
+            }
+
+            const gameContainer = document.getElementById('game-container');
+            const mainGameGrid = document.getElementById('main-game-grid');
+            const mainGameGridWrapper = document.getElementById('main-game-grid-wrapper');
+            const currentScoreEl = document.getElementById('current-score');
+            const bestScoreEl = document.getElementById('best-score');
+            const addRowBtn = document.getElementById('add-row-btn');
+            const hintBtn = document.getElementById('hint-btn');
+            const autoSolveBtn = document.getElementById('auto-solve-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const pauseModal = document.getElementById('pause-modal');
+            const closePauseModalBtn = document.getElementById('close-pause-modal');
+            const soundToggleBtn = document.getElementById('sound-toggle-btn');
+            const howToPlayBtn = document.getElementById('how-to-play-btn');
+            const retryBtn = document.getElementById('retry-btn');
+            const continueBtn = document.getElementById('continue-btn');
+            const addRowBadge = document.getElementById('add-row-badge');
+            const stageTitle = document.getElementById('stage-title');
+            const winAnimation = document.getElementById('win-animation');
+            const winMessage = document.getElementById('win-message');
+            const effectCanvas = document.getElementById('effect-canvas');
+            const ctx = effectCanvas.getContext('2d');
+            const backBtn = document.getElementById('back-btn');
+            const settingsBtn = document.getElementById('settings-btn');
+            const settingsModal = document.getElementById('settings-modal');
+            const closeSettingsModalBtn = document.getElementById('close-settings-modal');
+            const feedbackBtn = document.getElementById('feedback-btn');
+            const feedbackModal = document.getElementById('feedback-modal');
+            const closeFeedbackModalBtn = document.getElementById('close-feedback-modal');
+            const submitFeedbackBtn = document.getElementById('submit-feedback-btn');
+            
+            const GAME_COLS = 9;
+            let gameBoard = [];
+            let score = 0;
+            let bestScore = localStorage.getItem('nimbleMindBestScore') || 0;
+            let selectedGameCellIndex = null;
+            let addRowCount = 5;
+            let stage = 1;
+            let isStageCompleting = false;
+
+            function initGame(startStage = 1) {
+                stage = startStage;
+                score = 0;
+                isStageCompleting = false;
+                addRowCount = 5;
+                stageTitle.textContent = `Stage ${stage}`;
+                addRowBadge.textContent = addRowCount;
+                bestScoreEl.textContent = bestScore;
+                gameBoard = generateSolvableGrid();
+                renderMainGameBoard();
+                addCellClickListeners();
+            }
+            
+            function generateSolvableGrid() {
+                let pairs = [];
+                for(let i=1; i<=9; i++) pairs.push(i,i);
+                for(let i=1; i<=9; i++) pairs.push(i, 10-i);
+                for (let i = pairs.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+                }
+                let board = Array(GAME_COLS * 4).fill(null).map(() => ({ value: null, state: 'cleared' }));
+                for(let i = 0; i < 36; i++) {
+                    board[i] = { value: pairs[i], state: 'active' };
+                }
+                while(board.length < GAME_COLS * 9) {
+                    board.push({ value: null, state: 'cleared' });
+                }
+                return board;
+            }
+
+            function renderMainGameBoard() {
+                mainGameGrid.innerHTML = '';
+                gameBoard.forEach((cellData) => {
+                    const cell = document.createElement('div');
+                    cell.classList.add('grid-cell', 'text-xl', 'font-bold', 'flex', 'items-center', 'justify-center');
+                    const numberText = document.createElement('span');
+                    numberText.classList.add('number-text');
+                    numberText.textContent = cellData.value;
+                    const crossSymbol = document.createElement('span');
+                    crossSymbol.classList.add('cross-symbol');
+                    crossSymbol.innerHTML = '&times;';
+                    cell.appendChild(numberText);
+                    cell.appendChild(crossSymbol);
+
+                     if (cellData.state === 'active') {
+                     } else if (cellData.state === 'blurred') {
+                        cell.classList.add('blurred');
+                     } else {
+                        cell.classList.add('cleared');
+                        numberText.textContent = '';
+                     }
+                    mainGameGrid.appendChild(cell);
+                });
+                updateScore();
+            }
+            
+            function addCellClickListeners() {
+                const cells = mainGameGrid.children;
+                for(let i=0; i<cells.length; i++) {
+                    cells[i].onclick = () => handleGameCellClick(i);
+                }
+            }
+
+            function handleGameCellClick(index) {
+                if (gameBoard[index].state !== 'active') return;
+                const cell = mainGameGrid.children[index];
+                if (selectedGameCellIndex === null) {
+                    selectedGameCellIndex = index;
+                    cell.classList.add('selected');
+                } else {
+                    if (selectedGameCellIndex === index) {
+                        selectedGameCellIndex = null;
+                        cell.classList.remove('selected');
+                        return;
+                    }
+                    if (isValidGamePair(selectedGameCellIndex, index)) {
+                        const firstCellIndex = selectedGameCellIndex;
+                        const secondCellIndex = index;
+                        
+                        mainGameGrid.children[firstCellIndex].classList.add('selected');
+                        mainGameGrid.children[secondCellIndex].classList.add('selected');
+
+                        playMatchAnimation(firstCellIndex, secondCellIndex, () => {
+                            playSound();
+                            score += 10;
+                            gameBoard[firstCellIndex].state = 'blurred';
+                            gameBoard[secondCellIndex].state = 'blurred';
+                            
+                            setTimeout(() => {
+                                compactGameBoard();
+                                renderMainGameBoard();
+                                addCellClickListeners();
+                                checkEndGameStatus();
+                            }, 200);
+                        });
+
+                    } else {
+                        const cell1 = mainGameGrid.children[selectedGameCellIndex];
+                        const cell2 = mainGameGrid.children[index];
+                        cell1.classList.add('error');
+                        cell2.classList.add('error');
+                        setTimeout(() => {
+                            cell1.classList.remove('error');
+                            cell2.classList.remove('error');
+                            cell1.classList.remove('selected');
+                        }, 500);
+                    }
+                    selectedGameCellIndex = null;
+                }
+            }
+
+            function playMatchAnimation(index1, index2, callback) {
+                const cell1 = mainGameGrid.children[index1];
+                const cell2 = mainGameGrid.children[index2];
+                const rect1 = cell1.getBoundingClientRect();
+                const rect2 = cell2.getBoundingClientRect();
+                const appRect = document.getElementById('app-wrapper').getBoundingClientRect();
+
+                effectCanvas.width = appRect.width;
+                effectCanvas.height = appRect.height;
+                ctx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
+                ctx.beginPath();
+                ctx.moveTo(rect1.left - appRect.left + rect1.width / 2, rect1.top - appRect.top + rect1.height / 2);
+                ctx.lineTo(rect2.left - appRect.left + rect2.width / 2, rect2.top - appRect.top + rect2.height / 2);
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                const sparkle1 = document.createElement('div');
+                sparkle1.textContent = '✨';
+                sparkle1.className = 'sparkle-effect';
+                sparkle1.style.left = `${rect1.left - appRect.left}px`;
+                sparkle1.style.top = `${rect1.top - appRect.top}px`;
+                
+                const sparkle2 = document.createElement('div');
+                sparkle2.textContent = '✨';
+                sparkle2.className = 'sparkle-effect';
+                sparkle2.style.left = `${rect2.left - appRect.left}px`;
+                sparkle2.style.top = `${rect2.top - appRect.top}px`;
+
+                document.getElementById('app-wrapper').appendChild(sparkle1);
+                document.getElementById('app-wrapper').appendChild(sparkle2);
+
+                setTimeout(() => {
+                    ctx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
+                    sparkle1.remove();
+                    sparkle2.remove();
+                    callback();
+                }, 400);
+            }
+
+            function isValidGamePair(index1, index2) {
+                const num1 = gameBoard[index1].value;
+                const num2 = gameBoard[index2].value;
+                if (num1 !== num2 && num1 + num2 !== 10) return false;
+                const r1 = Math.floor(index1 / GAME_COLS), c1 = index1 % GAME_COLS;
+                const r2 = Math.floor(index2 / GAME_COLS), c2 = index2 % GAME_COLS;
+                if (r1 === r2) {
+                    for (let c = Math.min(c1, c2) + 1; c < Math.max(c1, c2); c++) {
+                        if (gameBoard[r1 * GAME_COLS + c].state === 'active') return false;
+                    }
+                    return true;
+                }
+                if (c1 === c2) {
+                    for (let r = Math.min(r1, r2) + 1; r < Math.max(r1, r2); r++) {
+                        if (gameBoard[r * GAME_COLS + c1].state === 'active') return false;
+                    }
+                    return true;
+                }
+                if (Math.abs(r1 - r2) === Math.abs(c1 - c2)) {
+                     const rStep = r1 < r2 ? 1 : -1;
+                     const cStep = c1 < c2 ? 1 : -1;
+                     let currR = r1 + rStep;
+                     let currC = c1 + cStep;
+                     while (currR !== r2) {
+                         if (gameBoard[currR * GAME_COLS + currC].state === 'active') return false;
+                         currR += rStep;
+                         currC += cStep;
+                     }
+                     return true;
+                }
+                const activeIndices = [];
+                gameBoard.forEach((cell, i) => { if(cell.state === 'active') activeIndices.push(i); });
+                const pos1 = activeIndices.indexOf(index1);
+                const pos2 = activeIndices.indexOf(index2);
+                if (Math.abs(pos1 - pos2) === 1) return true;
+                return false;
+            }
+
+            function compactGameBoard() {
+                const newBoard = [];
+                for (let i = 0; i < gameBoard.length; i += GAME_COLS) {
+                    const row = gameBoard.slice(i, i + GAME_COLS);
+                    if (!row.every(cell => cell.state === 'blurred' || cell.state === 'cleared')) {
+                        newBoard.push(...row);
+                    }
+                }
+                while(newBoard.length < GAME_COLS * 9) {
+                    newBoard.push({ value: null, state: 'cleared' });
+                }
+                gameBoard = newBoard;
+                mainGameGridWrapper.scrollTop = 0;
+            }
+            
+            function hasAvailableMoves() {
+                const activeCells = [];
+                gameBoard.forEach((cell, i) => { if(cell.state === 'active') activeCells.push(i); });
+                for(let i=0; i<activeCells.length; i++) {
+                    for(let j=i+1; j<activeCells.length; j++) {
+                        if(isValidGamePair(activeCells[i], activeCells[j])) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            function checkEndGameStatus() {
+                if (isStageCompleting) return;
+
+                const isGridEmpty = gameBoard.every(c => c.state !== 'active');
+                const noMovesLeft = !hasAvailableMoves();
+
+                if (isGridEmpty) {
+                    isStageCompleting = true;
+                    winMessage.innerHTML = "Congratulations! 🎉";
+                    playSound('win');
+                    winAnimation.classList.remove('hidden');
+                    setTimeout(() => {
+                        winAnimation.classList.add('hidden');
+                        stage++;
+                        initGame(stage);
+                    }, 2000);
+                } else if (noMovesLeft && addRowCount <= 0) {
+                    isStageCompleting = true;
+                    winMessage.innerHTML = "No pairs left! 🎉";
+                    playSound('win');
+                    winAnimation.classList.remove('hidden');
+                    setTimeout(() => {
+                        winAnimation.classList.add('hidden');
+                        stage++;
+                        initGame(stage);
+                    }, 2000);
+                }
+            }
+
+            function updateScore() {
+                currentScoreEl.textContent = score;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestScoreEl.textContent = bestScore;
+                    localStorage.setItem('nimbleMindBestScore', bestScore);
+                }
+            }
+            
+            hintBtn.onclick = () => {
+                 if (!hasAvailableMoves()) {
+                    checkEndGameStatus();
+                    return;
+                 }
+                 const activeCells = [];
+                 gameBoard.forEach((cell, i) => { if(cell.state === 'active') activeCells.push(i); });
+                 for(let i=0; i<activeCells.length; i++) {
+                    for(let j=i+1; j<activeCells.length; j++) {
+                        if(isValidGamePair(activeCells[i], activeCells[j])) {
+                            const cell1 = mainGameGrid.children[activeCells[i]];
+                            const cell2 = mainGameGrid.children[activeCells[j]];
+                            cell1.classList.add('hint-highlight');
+                            cell2.classList.add('hint-highlight');
+                            setTimeout(() => {
+                                cell1.classList.remove('hint-highlight');
+                                cell2.classList.remove('hint-highlight');
+                            }, 1000);
+                            return;
+                        }
+                    }
+                 }
+            };
+            
+            autoSolveBtn.onclick = () => {
+                const solveOnePair = () => {
+                    const activeCells = [];
+                    gameBoard.forEach((cell, i) => { if (cell.state === 'active') activeCells.push(i); });
+                    for (let i = 0; i < activeCells.length; i++) {
+                        for (let j = i + 1; j < activeCells.length; j++) {
+                            if (isValidGamePair(activeCells[i], activeCells[j])) {
+                                playSound();
+                                score += 10;
+                                gameBoard[activeCells[i]].state = 'blurred';
+                                gameBoard[activeCells[j]].state = 'blurred';
+                                setTimeout(() => {
+                                    compactGameBoard();
+                                    renderMainGameBoard();
+                                    addCellClickListeners();
+                                    checkEndGameStatus();
+                                }, 200);
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                };
+                const intervalId = setInterval(() => {
+                    if (!solveOnePair()) {
+                        clearInterval(intervalId);
+                        checkEndGameStatus();
+                    }
+                }, 300);
+            };
+
+            addRowBtn.onclick = () => {
+                if (addRowCount <= 0) return;
+                const remainingActiveValues = gameBoard.filter(c => c.state === 'active').map(c => c.value);
+                
+                remainingActiveValues.forEach(val => {
+                    let emptyIndex = gameBoard.findIndex(c => c.state === 'cleared');
+                    if (emptyIndex !== -1) {
+                        gameBoard[emptyIndex] = { value: val, state: 'active' };
+                    } else {
+                        for(let i=0; i<GAME_COLS; i++) {
+                            gameBoard.push({ value: null, state: 'cleared' });
+                        }
+                        gameBoard[gameBoard.length - GAME_COLS] = { value: val, state: 'active' };
+                    }
+                });
+
+                while(gameBoard.filter(c => c.state === 'cleared').length < GAME_COLS * 3) {
+                    for(let i=0; i<GAME_COLS; i++) {
+                        gameBoard.push({ value: null, state: 'cleared' });
+                    }
+                }
+                
+                addRowCount--;
+                addRowBadge.textContent = addRowCount;
+                renderMainGameBoard();
+                addCellClickListeners();
+                setTimeout(() => {
+                    mainGameGridWrapper.scrollTop = mainGameGridWrapper.scrollHeight;
+                }, 100);
+            };
+
+            pauseBtn.onclick = () => pauseModal.classList.remove('hidden');
+            closePauseModalBtn.onclick = () => pauseModal.classList.add('hidden');
+            continueBtn.onclick = () => pauseModal.classList.add('hidden');
+            retryBtn.onclick = () => {
+                pauseModal.classList.add('hidden');
+                initGame(stage);
+            };
+            soundToggleBtn.onclick = () => {
+                soundEnabled = !soundEnabled;
+                soundToggleBtn.textContent = soundEnabled ? '🔊' : '🔇';
+            };
+            howToPlayBtn.onclick = () => {
+                pauseModal.classList.add('hidden');
+                initTutorial(true);
+            };
+            skipTutorialBtn.onclick = () => {
+                tutorialContainer.classList.add('hidden');
+                gameContainer.classList.remove('hidden');
+                pauseModal.classList.remove('hidden');
+            };
+            
+            settingsBtn.onclick = () => settingsModal.classList.remove('hidden');
+            closeSettingsModalBtn.onclick = () => settingsModal.classList.add('hidden');
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    setLanguage(e.target.dataset.langCode);
+                    settingsModal.classList.add('hidden');
+                }
+            });
+
+            feedbackBtn.onclick = () => feedbackModal.classList.remove('hidden');
+            closeFeedbackModalBtn.onclick = () => feedbackModal.classList.add('hidden');
+            submitFeedbackBtn.onclick = () => {
+                document.getElementById('feedback-textarea').value = '';
+                feedbackModal.classList.add('hidden');
+                alert('Thank you for your feedback!');
+            };
+
+            backBtn.onclick = () => {
+                gameContainer.classList.add('hidden');
+                homeScreen.classList.remove('hidden');
+                continueGameBtn.disabled = false;
+            };
+            
+            newGameBtn.onclick = () => {
+                homeScreen.classList.add('hidden');
+                const tutorialCompleted = localStorage.getItem('nimbleMindTutorialCompleted');
+                if (!tutorialCompleted) {
+                    tutorialContainer.classList.remove('hidden');
+                    initTutorial();
+                } else {
+                    gameContainer.classList.remove('hidden');
+                    initGame(1);
+                }
+            };
+
+            continueGameBtn.onclick = () => {
+                homeScreen.classList.add('hidden');
+                gameContainer.classList.remove('hidden');
+            };
+
+            // Initial Load
+            const tutorialCompleted = localStorage.getItem('nimbleMindTutorialCompleted');
+            if (!tutorialCompleted) {
+                tutorialContainer.classList.remove('hidden');
+                initTutorial();
+            } else {
+                homeScreen.classList.remove('hidden');
+                if (localStorage.getItem('nimbleMindGameState')) {
+                    const savedState = JSON.parse(localStorage.getItem('nimbleMindGameState'));
+                    gameBoard = savedState.board;
+                    score = savedState.score;
+                    stage = savedState.stage;
+                    addRowCount = savedState.addRowCount;
+                    renderMainGameBoard();
+                    addCellClickListeners();
+                    continueGameBtn.disabled = false;
+                } else {
+                    continueGameBtn.disabled = true;
+                }
+            }
+            
+            window.onbeforeunload = () => {
+                if (!gameContainer.classList.contains('hidden')) {
+                    const gameState = {
+                        board: gameBoard,
+                        score: score,
+                        stage: stage,
+                        addRowCount: addRowCount
+                    };
+                    localStorage.setItem('nimbleMindGameState', JSON.stringify(gameState));
+                }
+            };
+
+            setLanguage(currentLang);
+        });
+    </script>
+</body>
+</html>
